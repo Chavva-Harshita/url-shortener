@@ -19,9 +19,12 @@ public class Url {
     private String shortCode;
 
     @Column(nullable = false)
-private long clickCount = 0;
+    private long clickCount = 0;
 
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
 
     public Url() {
     }
@@ -46,14 +49,23 @@ private long clickCount = 0;
         this.shortCode = shortCode;
     }
 
+    public long getClickCount() {
+        return clickCount;
+    }
+
+    public void setClickCount(long clickCount) {
+        this.clickCount = clickCount;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
-    public long getClickCount() {
-    return clickCount;
-}
 
-public void setClickCount(long clickCount) {
-    this.clickCount = clickCount;
-}
+    public LocalDateTime getExpiresAt() {
+        return expiresAt;
+    }
+
+    public void setExpiresAt(LocalDateTime expiresAt) {
+        this.expiresAt = expiresAt;
+    }
 }

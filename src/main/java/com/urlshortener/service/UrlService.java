@@ -1,13 +1,15 @@
 
-
 package com.urlshortener.service;
 
 import com.urlshortener.entity.Url;
 import com.urlshortener.repository.UrlRepository;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
 import java.security.SecureRandom;
+import java.time.LocalDateTime;
 
 @Service
 public class UrlService {
@@ -25,43 +27,58 @@ public class UrlService {
         this.urlRepository = urlRepository;
     }
 
-    
-@Transactional
-public Url shortenUrl(String originalUrl) {
+    // 1. Create a short URL
+    @Transactional
+    public Url shortenUrl(String originalUrl) {
 
-    if (originalUrl == null || originalUrl.isBlank()) {
-        throw new IllegalArgumentException("URL cannot be empty");
-    }
+        if (originalUrl == null || originalUrl.isBlank()) {
+            throw new IllegalArgumentException("URL cannot be empty");
+        }
 
-    originalUrl = originalUrl.trim();
+        originalUrl = originalUrl.trim();
 
-    if (!originalUrl.matches("^https?://.+")) {
-        throw new IllegalArgumentException(
-                "URL must start with http:// or https://"
+        try {
+            URI uri = URI.create(originalUrl);
+            String scheme = uri.getScheme();
+
+            if (scheme == null
+                    || !(scheme.equalsIgnoreCase("http")
+                    || scheme.equalsIgnoreCase("https"))
+                    || uri.getHost() == null
+                    || uri.getHost().isBlank()) {
+
+                throw new IllegalArgumentException(
+                        "Please provide a valid HTTP or HTTPS URL"
+                );
+            }
+
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException(
+                    "Please provide a valid HTTP or HTTPS URL"
+            );
+        }
+
+        // Generate a unique short code
+        for (int attempt = 0; attempt < 10; attempt++) {
+
+            String shortCode = generateShortCode();
+
+            if (!urlRepository.existsByShortCode(shortCode)) {
+
+                Url url = new Url();
+                url.setOriginalUrl(originalUrl);
+                url.setShortCode(shortCode);
+
+                return urlRepository.save(url);
+            }
+        }
+
+        throw new IllegalStateException(
+                "Could not generate a unique short code. Please try again."
         );
     }
 
-    for (int attempt = 0; attempt < 10; attempt++) {
-
-        String shortCode = generateShortCode();
-
-        if (!urlRepository.existsByShortCode(shortCode)) {
-
-            Url url = new Url();
-            url.setOriginalUrl(originalUrl);
-            url.setShortCode(shortCode);
-
-            return urlRepository.save(url);
-        }
-    }
-
-    throw new IllegalStateException(
-            "Could not generate a unique short code. Please try again."
-    );
-}
-        
-
-      
+    // 2. Generate a random six-character code
     private String generateShortCode() {
 
         StringBuilder code = new StringBuilder(CODE_LENGTH);
@@ -74,21 +91,35 @@ public Url shortenUrl(String originalUrl) {
         return code.toString();
     }
 
-   
-public Url getOriginalUrl(String shortCode) {
+    // 3. Retrieve a URL for redirection and increment clicks
+    @Transactional
+    public Url getOriginalUrl(String shortCode) {
 
-    Url url = urlRepository.findByShortCode(shortCode)
-            .orElseThrow(() ->
-                    new IllegalArgumentException("Short URL not found"));
+        Url url = getUrlByShortCode(shortCode);
 
-    url.setClickCount(url.getClickCount() + 1);
+        if (url.getExpiresAt() != null
+                && !url.getExpiresAt().isAfter(LocalDateTime.now())) {
 
-    return urlRepository.save(url);
-}
+            throw new UrlNotFoundException("Short URL has expired");
+        }
 
-public Url getUrlByShortCode(String shortCode) {
-    return urlRepository.findByShortCode(shortCode)
-            .orElseThrow(() ->
-                    new IllegalArgumentException("Short URL not found"));
-}
+        url.setClickCount(url.getClickCount() + 1);
+
+        return urlRepository.save(url);
+    }
+
+    // 4. Find a URL without incrementing its click count
+    @Transactional(readOnly = true)
+    public Url getUrlByShortCode(String shortCode) {
+
+        return urlRepository.findByShortCode(shortCode)
+                .orElseThrow(() ->
+                        new UrlNotFoundException("Short URL not found"));
+    }
+
+    // 5. Save changes to an existing URL
+    @Transactional
+    public Url saveUrl(Url url) {
+        return urlRepository.save(url);
+    }
 }

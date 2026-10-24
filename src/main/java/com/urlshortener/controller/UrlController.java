@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 
 @RestController
@@ -20,7 +21,7 @@ public class UrlController {
         this.urlService = urlService;
     }
 
-    // 1. Create a short URL
+    // 1. Create a short URL with optional expiration
     @PostMapping
     public ResponseEntity<Map<String, String>> shortenUrl(
             @RequestBody Map<String, String> request) {
@@ -28,6 +29,30 @@ public class UrlController {
         String originalUrl = request.get("originalUrl");
 
         Url savedUrl = urlService.shortenUrl(originalUrl);
+
+        String expiresAtValue = request.get("expiresAt");
+
+        if (expiresAtValue != null && !expiresAtValue.isBlank()) {
+
+            LocalDateTime expiresAt;
+
+            try {
+                expiresAt = LocalDateTime.parse(expiresAtValue);
+            } catch (Exception ex) {
+                throw new IllegalArgumentException(
+                        "Invalid expiration format. Use yyyy-MM-ddTHH:mm:ss"
+                );
+            }
+
+            if (!expiresAt.isAfter(LocalDateTime.now())) {
+                throw new IllegalArgumentException(
+                        "Expiration time must be in the future"
+                );
+            }
+
+            savedUrl.setExpiresAt(expiresAt);
+            savedUrl = urlService.saveUrl(savedUrl);
+        }
 
         Map<String, String> response = Map.of(
                 "originalUrl", savedUrl.getOriginalUrl(),
@@ -39,30 +64,19 @@ public class UrlController {
     }
 
     // 2. Redirect to the original URL
-    @GetMapping("/{shortCode}")
-    public ResponseEntity<Void> redirectToOriginalUrl(
+      // 3. Get URL statistics without incrementing click count
+    @GetMapping("/{shortCode}/stats")
+    public ResponseEntity<Map<String, Object>> getUrlStats(
             @PathVariable String shortCode) {
 
-        Url url = urlService.getOriginalUrl(shortCode);
+        Url url = urlService.getUrlByShortCode(shortCode);
 
-        return ResponseEntity
-                .status(HttpStatus.FOUND)
-                .header("Location", url.getOriginalUrl())
-                .build();
+        Map<String, Object> stats = Map.of(
+                "originalUrl", url.getOriginalUrl(),
+                "shortCode", url.getShortCode(),
+                "clickCount", url.getClickCount()
+        );
+
+        return ResponseEntity.ok(stats);
     }
-    
-@GetMapping("/{shortCode}/stats")
-public ResponseEntity<Map<String, Object>> getUrlStats(
-        @PathVariable String shortCode) {
-
-    Url url = urlService.getOriginalUrl(shortCode);
-
-    Map<String, Object> stats = Map.of(
-            "originalUrl", url.getOriginalUrl(),
-            "shortCode", url.getShortCode(),
-            "clickCount", url.getClickCount()
-    );
-
-    return ResponseEntity.ok(stats);
-}
 }
